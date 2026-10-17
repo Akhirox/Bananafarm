@@ -1,0 +1,2462 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banana Tycoon — Cozy Idle & Spatial Factory</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Canvas Confetti pour les célébrations (Frenzy, Régime Doré, R&D) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+  <!-- Firebase SDK v10 (Compat) pour fonctionnement immédiat sans bundler -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <!-- Google Fonts : Plus Jakarta Sans & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            banana: {
+              50: '#fefce8',
+              100: '#fef9c3',
+              200: '#fef08a',
+              300: '#fde047',
+              400: '#facc15',
+              500: '#eab308',
+              600: '#ca8a04',
+            },
+            jungle: {
+              800: '#132a1e',
+              900: '#0b1911',
+              950: '#060e09',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at top left, #132a1e 0%, #0b1911 55%, #060e09 100%);
+      color: #f8fafc;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    /* Animation du Régime de Bananes principal */
+    .banana-clicker {
+      transition: transform 0.08s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+    }
+    .banana-clicker:active {
+      transform: scale(0.91) rotate(-4deg);
+    }
+
+    /* Popups flottants (+X BB) */
+    @keyframes floatUpFade {
+      0% { opacity: 1; transform: translateY(0) scale(0.9); }
+      40% { opacity: 1; transform: translateY(-28px) scale(1.08); }
+      100% { opacity: 0; transform: translateY(-65px) scale(0.95); }
+    }
+    .floating-text {
+      position: fixed;
+      pointer-events: none;
+      z-index: 100;
+      animation: floatUpFade 0.95s ease-out forwards;
+    }
+
+    /* Animation du Régime Doré Aléatoire */
+    @keyframes goldenFloat {
+      0%, 100% { transform: translateY(0px) rotate(-6deg) scale(1); }
+      50% { transform: translateY(-14px) rotate(6deg) scale(1.08); }
+    }
+    .golden-banana {
+      animation: goldenFloat 2.4s ease-in-out infinite;
+      filter: drop-shadow(0 0 20px rgba(250, 204, 21, 0.85));
+    }
+
+    /* Halo Banana Frenzy x5 */
+    @keyframes frenzyPulse {
+      0%, 100% { box-shadow: 0 0 18px rgba(250, 204, 21, 0.35), inset 0 0 15px rgba(250, 204, 21, 0.15); }
+      50% { box-shadow: 0 0 36px rgba(250, 204, 21, 0.75), inset 0 0 25px rgba(250, 204, 21, 0.3); }
+    }
+    .frenzy-active-glow {
+      animation: frenzyPulse 1.1s infinite;
+      border-color: #facc15 !important;
+    }
+
+    /* Scrollbars douces */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.4); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(234, 179, 8, 0.35); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(234, 179, 8, 0.6); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-banana-400 selection:text-slate-950">
+
+  <!-- BARRE SUPÉRIEURE : HEADER & ÉTAT DE SAUVEGARDE -->
+  <header class="border-b border-emerald-900/60 bg-jungle-950/80 backdrop-blur-md sticky top-0 z-30 px-4 py-2.5">
+    <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-banana-300 to-amber-500 flex items-center justify-center text-2xl shadow-lg shadow-amber-500/20">
+          🍌
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-extrabold tracking-tight text-white">BANANA TYCOON</h1>
+            <span class="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              100% Chill Edition
+            </span>
+          </div>
+          <p class="text-xs text-emerald-200/70">Plantation Spatiale & Chaîne de Raffinage Industrielle</p>
+        </div>
+      </div>
+
+      <!-- Indicateur de Frenzy & Sauvegarde -->
+      <div class="flex items-center gap-3">
+        <div id="frenzyHeaderBadge" class="hidden items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-yellow-500/30 animate-bounce">
+          <span>⚡ BANANA FRENZY x5</span>
+          <span id="frenzyHeaderTimer" class="font-mono">20.0s</span>
+        </div>
+
+        <div id="storageStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/70 text-xs text-slate-300">
+          <span id="storageStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span id="storageStatusText">Sauvegarde Locale</span>
+        </div>
+
+        <button id="btnQuickSave" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-200 text-xs font-semibold transition flex items-center gap-1.5">
+          <span>💾</span>
+          <span>Sauvegarder</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENEUR PRINCIPAL EN 3 VOLETS -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-3 lg:p-5 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
+
+    <!-- =====================================================================
+         VOLET GAUCHE (3 COLONNES) : CLIC MANUEL, MÉTRIQUES & FRENZY
+         ===================================================================== -->
+    <section class="lg:col-span-3 flex flex-col gap-4">
+
+      <!-- Carte des Métriques Globales (Économie Duale) -->
+      <div class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 p-4 shadow-xl backdrop-blur-sm space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Trésorerie & Flux</span>
+          <span id="supplyStatusPill" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            Flux optimal
+          </span>
+        </div>
+
+        <!-- Ressource 1 : Bananes Brutes (BB) -->
+        <div class="p-3 rounded-xl bg-gradient-to-br from-amber-500/15 via-slate-900/60 to-slate-900 border border-amber-500/30">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-amber-200/80">Bananes Brutes (BB)</span>
+            <span class="text-lg">🍌</span>
+          </div>
+          <div id="metricBB" class="text-2xl xl:text-3xl font-extrabold font-mono text-amber-300 tracking-tight mt-0.5">
+            0
+          </div>
+          <div class="mt-2 pt-2 border-t border-amber-500/20 flex flex-col gap-0.5 text-xs font-mono">
+            <div class="flex justify-between text-emerald-300">
+              <span>Récolte brute :</span>
+              <span id="metricRawBBps">+0.0 /s</span>
+            </div>
+            <div class="flex justify-between text-amber-300/80">
+              <span>Conso. usines :</span>
+              <span id="metricConsumedBBps">-0.0 /s</span>
+            </div>
+            <div class="flex justify-between font-bold text-white pt-0.5">
+              <span>Bilan net :</span>
+              <span id="metricNetBBps">+0.0 BB/s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ressource 2 : Bananadollars ($) -->
+        <div class="p-3 rounded-xl bg-gradient-to-br from-emerald-500/15 via-slate-900/60 to-slate-900 border border-emerald-500/30">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-emerald-200/80">Bananadollars ($)</span>
+            <span class="text-lg">💵</span>
+          </div>
+          <div id="metricDollars" class="text-2xl xl:text-3xl font-extrabold font-mono text-emerald-400 tracking-tight mt-0.5">
+            0 $
+          </div>
+          <div class="mt-2 pt-2 border-t border-emerald-500/20 flex justify-between items-center text-xs font-mono">
+            <span class="text-emerald-200/80">Export raffiné :</span>
+            <span id="metricDollarsPs" class="font-bold text-emerald-300">+0.0 $/s</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Zone de Clic Manuel : Le Grand Régime -->
+      <div id="clickerCard" class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 p-5 shadow-xl backdrop-blur-sm flex flex-col items-center text-center relative overflow-hidden">
+        <div class="text-xs font-bold uppercase tracking-wider text-amber-300/90 mb-1">
+          Récolte Manuelle
+        </div>
+        <div class="text-xs text-slate-400 mb-4">
+          Puissance du clic : <span id="metricClickPower" class="font-mono font-bold text-amber-300">+1.0 BB</span>
+        </div>
+
+        <!-- Bouton Régime Interactif -->
+        <button id="btnBigBanana" class="banana-clicker relative group w-36 h-36 rounded-full bg-gradient-to-b from-amber-300/25 via-amber-500/15 to-transparent border-2 border-amber-400/40 hover:border-amber-300 flex items-center justify-center shadow-2xl shadow-amber-500/10 focus:outline-none">
+          <div class="absolute inset-0 rounded-full bg-amber-400/10 group-hover:bg-amber-400/20 blur-xl transition"></div>
+          <span class="text-7xl select-none filter drop-shadow-lg transform group-hover:scale-105 transition">
+            🍌
+          </span>
+        </button>
+
+        <p class="text-[11px] text-slate-400 mt-3">
+          Chaque clic charge la jauge <strong class="text-amber-300">Banana Frenzy (+2 %)</strong>
+        </p>
+
+        <!-- Jauge Banana Frenzy -->
+        <div class="w-full mt-4 pt-4 border-t border-slate-800/90">
+          <div class="flex justify-between items-center text-xs mb-1.5">
+            <span class="font-bold text-amber-300 flex items-center gap-1">
+              <span>⚡</span>
+              <span>Banana Frenzy (x5)</span>
+            </span>
+            <span id="frenzyPercentText" class="font-mono font-bold text-amber-200">0 %</span>
+          </div>
+          <div class="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden border border-slate-700/80 p-0.5">
+            <div id="frenzyProgressBar" class="h-full bg-gradient-to-r from-amber-500 via-yellow-400 to-lime-300 rounded-full transition-all duration-150" style="width: 0%"></div>
+          </div>
+          <p id="frenzySubtext" class="text-[11px] text-slate-400 mt-1.5">
+            Ne décroît jamais ! À 100 %, toute la grille produit <strong class="text-white">x5 pendant 20s</strong>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Aide-mémoire des Synergies Spatiales -->
+      <div class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 p-4 shadow-xl text-xs space-y-2">
+        <div class="font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+          <span>🧭</span>
+          <span>Guide des Synergies Spatiales</span>
+        </div>
+        <div class="space-y-1.5 text-slate-300 leading-relaxed">
+          <div class="flex gap-2 items-start">
+            <span class="text-base">💧</span>
+            <span><strong class="text-sky-300">Canal d'Irrigation :</strong> +30 % BB sur les parcelles agricoles adjacentes <span class="font-mono text-sky-200">(Croix +)</span>.</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-base">🛤️</span>
+            <span><strong class="text-amber-300">Tapis Roulant :</strong> Placé entre une parcelle agricole et une usine <span class="font-mono text-amber-200">(+)</span>, réduit la conso BB de l'usine de -20 % et booste ses $ de +15 %.</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-base">🏛️</span>
+            <span><strong class="text-purple-300">Silo Central :</strong> +25 % rendement $ aux usines situées en diagonale <span class="font-mono text-purple-200">(Diagonale X)</span>.</span>
+          </div>
+          <div class="flex gap-2 items-start">
+            <span class="text-base">🏢</span>
+            <span><strong class="text-emerald-300">QG Commercial :</strong> +15 % gains $ sur toute sa <span class="font-mono text-emerald-200">Ligne et Colonne</span>.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VOLET CENTRAL (5 COLONNES) : GRILLE 6x6 & INSPECTEUR DE PARCELLE
+         ===================================================================== -->
+    <section class="lg:col-span-5 flex flex-col gap-4">
+      <div id="gridCard" class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 p-4 lg:p-5 shadow-xl backdrop-blur-sm">
+
+        <!-- En-tête de la Grille & Modes d'action -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800">
+          <div>
+            <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+              <span>🗺️</span>
+              <span>La Plantation & Complexe (6×6)</span>
+            </h2>
+            <p id="gridActionHint" class="text-xs text-emerald-300/80">
+              Sélectionnez un bâtiment à droite ou cliquez sur une case pour l'inspecter.
+            </p>
+          </div>
+
+          <!-- Barre d'outils rapide de la grille -->
+          <div class="flex items-center gap-1 bg-slate-950/90 p-1 rounded-xl border border-slate-800">
+            <button data-mode="inspect" class="grid-mode-btn px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white transition" title="Inspecter ou placer">
+              🔍 Inspecter
+            </button>
+            <button data-mode="move" class="grid-mode-btn px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" title="Déplacer ou échanger deux cases">
+              🔄 Déplacer
+            </button>
+            <button data-mode="upgrade" class="grid-mode-btn px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" title="Améliorer en 1 clic">
+              ⬆️ Améliorer
+            </button>
+            <button data-mode="sell" class="grid-mode-btn px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" title="Vendre avec remboursement à 100 %">
+              💰 Vendre 100%
+            </button>
+          </div>
+        </div>
+
+        <!-- Bannière de sélection d'achat en cours -->
+        <div id="selectedBuildBanner" class="hidden mb-3 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span id="selectedBuildIcon" class="text-lg">🌱</span>
+            <div>
+              <span class="text-amber-200">Prêt à construire : </span>
+              <strong id="selectedBuildName" class="text-white">Bananier Sauvage</strong>
+              <span id="selectedBuildCost" class="ml-1 font-mono text-amber-300">(15 BB)</span>
+            </div>
+          </div>
+          <button id="btnCancelBuildSelection" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold">
+            Annuler (Échap)
+          </button>
+        </div>
+
+        <!-- GRILLE 6x6 -->
+        <div id="plantationGrid" class="grid grid-cols-6 gap-2 sm:gap-2.5 aspect-square max-w-[540px] mx-auto">
+          <!-- Généré dynamiquement par UIController -->
+        </div>
+
+        <!-- Légende des couleurs sous la grille -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+          <div class="flex items-center gap-3">
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500/60 border border-emerald-400"></span> Agricole (BB)</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500/60 border border-amber-400"></span> Raffinage ($)</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm bg-sky-500/60 border border-sky-400"></span> Support & Synergie</span>
+          </div>
+          <div id="nextTileCostLabel" class="font-mono text-emerald-300">
+            Prochaine parcelle : --
+          </div>
+        </div>
+      </div>
+
+      <!-- Inspecteur de Parcelle sélectionnée -->
+      <div id="cellInspector" class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 p-4 shadow-xl backdrop-blur-sm">
+        <div id="inspectorContent" class="text-xs text-slate-300 flex items-center justify-between">
+          <span>Cliquez sur une parcelle de la grille pour voir ses synergies détaillées, l'améliorer (Nv. 1 à 10) ou la déplacer.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         VOLET DROIT (4 COLONNES) : BOUTIQUE, USINES, R&D & PROFIL FIREBASE
+         ===================================================================== -->
+    <section class="lg:col-span-4 flex flex-col gap-4">
+      <div class="rounded-2xl bg-slate-900/75 border border-emerald-800/50 shadow-xl backdrop-blur-sm overflow-hidden flex flex-col">
+
+        <!-- Navigation par Onglets -->
+        <div class="grid grid-cols-4 bg-slate-950/90 border-b border-slate-800 p-1 gap-1 text-xs font-bold">
+          <button data-tab="agri" class="tab-btn py-2.5 px-2 rounded-xl bg-emerald-600 text-white transition flex flex-col items-center gap-0.5">
+            <span class="text-base">🌱</span>
+            <span>Agricole</span>
+          </button>
+          <button data-tab="factory" class="tab-btn py-2.5 px-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition flex flex-col items-center gap-0.5">
+            <span class="text-base">🏭</span>
+            <span>Usines & Syn.</span>
+          </button>
+          <button data-tab="rnd" class="tab-btn py-2.5 px-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition flex flex-col items-center gap-0.5">
+            <span class="text-base">🔬</span>
+            <span>R&D Tech</span>
+          </button>
+          <button data-tab="profile" class="tab-btn py-2.5 px-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition flex flex-col items-center gap-0.5">
+            <span class="text-base">☁️</span>
+            <span>Profil & Cloud</span>
+          </button>
+        </div>
+
+        <!-- Contenu des Onglets -->
+        <div class="p-4 max-h-[680px] overflow-y-auto space-y-3">
+
+          <!-- ONGLET 1 : BÂTIMENTS AGRICOLES -->
+          <div id="tab-agri" class="tab-panel space-y-3">
+            <div class="text-xs text-slate-300 bg-emerald-950/50 border border-emerald-800/50 rounded-xl p-3">
+              💡 <strong>Producteurs Agricoles :</strong> Génèrent des <strong>Bananes Brutes (BB/s)</strong> sans jamais s'arrêter. Sélectionnez un bâtiment puis cliquez sur une case libre de la grille.
+            </div>
+            <div id="agriShopList" class="space-y-2.5"></div>
+          </div>
+
+          <!-- ONGLET 2 : USINES DE RAFFINAGE & BÂTIMENTS DE SUPPORT -->
+          <div id="tab-factory" class="tab-panel hidden space-y-4">
+            <div class="text-xs text-slate-300 bg-amber-950/40 border border-amber-800/50 rounded-xl p-3">
+              ⚙️ <strong>Règle 100% Chill :</strong> Les usines transforment vos <strong>BB/s</strong> en <strong>Bananadollars ($/s)</strong>. Si votre stock de BB tombe à 0, l'usine se met simplement en pause sans aucune pénalité et repart dès que les BB reviennent !
+            </div>
+
+            <div>
+              <h3 class="text-xs font-extrabold uppercase tracking-wider text-amber-400 mb-2">
+                🏭 Usines de Raffinage (BB ➔ $)
+              </h3>
+              <div id="factoryShopList" class="space-y-2.5"></div>
+            </div>
+
+            <div class="pt-3 border-t border-slate-800">
+              <h3 class="text-xs font-extrabold uppercase tracking-wider text-sky-400 mb-2">
+                🧭 Bâtiments de Support & Synergies d'Adjacence
+              </h3>
+              <div id="supportShopList" class="space-y-2.5"></div>
+            </div>
+          </div>
+
+          <!-- ONGLET 3 : ARBRE DE TECHNOLOGIES (R&D) -->
+          <div id="tab-rnd" class="tab-panel hidden space-y-3">
+            <div class="text-xs text-slate-300 bg-purple-950/40 border border-purple-800/50 rounded-xl p-3">
+              🔬 <strong>Laboratoire R&D :</strong> Investissez vos <strong>Bananadollars ($)</strong> dans des brevets permanents qui boostent toute votre plantation.
+            </div>
+            <div id="rndList" class="space-y-2.5"></div>
+          </div>
+
+          <!-- ONGLET 4 : STATISTIQUES & PROFIL FIREBASE -->
+          <div id="tab-profile" class="tab-panel hidden space-y-4">
+
+            <!-- Carte Authentification Firebase -->
+            <div class="rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 space-y-3">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <span>🔥</span>
+                  <span>Synchronisation Cloud Firebase</span>
+                </h3>
+                <span id="authUserBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                  Mode Local
+                </span>
+              </div>
+
+              <p id="firebaseModeNotice" class="text-xs text-slate-400 leading-relaxed">
+                Sauvegarde automatique toutes les 60 secondes. Si les clés Firebase ne sont pas renseignées, vos données sont sauvegardées automatiquement dans votre navigateur (<code class="text-emerald-300">localStorage</code>).
+              </p>
+
+              <!-- Formulaire Email / Mot de passe + Invité -->
+              <div id="authFormContainer" class="space-y-2">
+                <input id="authEmailInput" type="email" placeholder="Email (ex: planteur@banana.io)" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-400" />
+                <input id="authPasswordInput" type="password" placeholder="Mot de passe (6+ caractères)" class="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-amber-400" />
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                  <button id="btnEmailLogin" class="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition">
+                    Se connecter / Créer
+                  </button>
+                  <button id="btnAnonLogin" class="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition">
+                    🕶️ Jouer en Invité
+                  </button>
+                </div>
+              </div>
+
+              <!-- Zone Connecté -->
+              <div id="authLoggedContainer" class="hidden flex items-center justify-between pt-2 border-t border-slate-800">
+                <span id="authUserEmailDisplay" class="text-xs text-emerald-300 font-mono truncate max-w-[200px]"></span>
+                <button id="btnLogout" class="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-semibold">
+                  Déconnexion
+                </button>
+              </div>
+            </div>
+
+            <!-- Outils de Simulation AFK & Gestion de Sauvegarde -->
+            <div class="rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 space-y-2.5">
+              <h3 class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                ⏱️ Outils de Test & Sauvegarde
+              </h3>
+              <p class="text-xs text-slate-400">
+                Testez à tout moment le calculateur de progression hors-ligne (AFK) ou déclenchez un Régime Doré :
+              </p>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="btnSimulateAFK" class="px-3 py-2 rounded-lg bg-sky-600/25 hover:bg-sky-600/40 border border-sky-500/40 text-sky-200 text-xs font-semibold transition">
+                  🌙 Simuler 1h AFK
+                </button>
+                <button id="btnSpawnGoldenTest" class="px-3 py-2 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/40 text-amber-200 text-xs font-semibold transition">
+                  ✨ Appeler Régime Doré
+                </button>
+              </div>
+              <div class="pt-2 border-t border-slate-800 flex justify-between items-center">
+                <span class="text-[11px] text-slate-400">Dernière sauvegarde : <strong id="lastSaveTimeText" class="text-slate-200">À l'instant</strong></span>
+                <button id="btnResetGame" class="text-[11px] text-rose-400 hover:text-rose-300 underline">
+                  Réinitialiser la partie
+                </button>
+              </div>
+            </div>
+
+            <!-- Statistiques Globales -->
+            <div class="rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 space-y-2">
+              <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+                📊 Statistiques de la Plantation
+              </h3>
+              <div class="space-y-1.5 text-xs font-mono">
+                <div class="flex justify-between text-slate-300">
+                  <span>BB totales récoltées :</span>
+                  <span id="statTotalBB" class="text-amber-300 font-bold">0</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>Bananadollars générés :</span>
+                  <span id="statTotalDollars" class="text-emerald-400 font-bold">0 $</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>Clics manuels :</span>
+                  <span id="statTotalClicks" class="text-white font-bold">0</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>Régimes Dorés récoltés :</span>
+                  <span id="statGoldenCaught" class="text-yellow-300 font-bold">0</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>Parcelles débloquées :</span>
+                  <span id="statUnlockedCells" class="text-emerald-300 font-bold">6 / 36</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                  <span>Rendement AFK actuel :</span>
+                  <span id="statAfkEfficiency" class="text-sky-300 font-bold">50 %</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- RÉGIME DORÉ FLOTTANT ALÉATOIRE (Boost Actif : +15 min de production) -->
+  <button id="goldenBananaFloating" class="hidden fixed z-50 golden-banana w-20 h-20 rounded-full bg-gradient-to-br from-yellow-200 via-amber-400 to-amber-600 border-4 border-white shadow-2xl flex flex-col items-center justify-center cursor-pointer focus:outline-none" title="Régime Doré ! Cliquez pour +15 min de production !">
+    <span class="text-4xl">🍌</span>
+    <span class="text-[10px] font-extrabold uppercase text-slate-950 bg-white/90 px-1.5 rounded-full -mt-1">DORÉ!</span>
+  </button>
+
+  <!-- MODAL DE RÉCAPITULATIF AFK (OFFLINE PROGRESS) -->
+  <div id="afkModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-md w-full rounded-2xl bg-slate-900 border-2 border-amber-400/50 p-6 shadow-2xl text-center space-y-4">
+      <div class="w-16 h-16 mx-auto rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-4xl">
+        🌴
+      </div>
+      <div>
+        <h3 class="text-xl font-extrabold text-white">Bon retour à la Plantation !</h3>
+        <p class="text-xs text-slate-300 mt-1">
+          Vos équipes ont continué de récolter et raffiner pendant votre absence (<span id="afkDurationText" class="text-amber-300 font-bold">--</span>, plafonné à 12h max).
+        </p>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2 text-sm font-mono">
+        <div class="flex justify-between items-center">
+          <span class="text-slate-400">Efficacité nocturne :</span>
+          <span id="afkRateBadge" class="text-xs font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">50 %</span>
+        </div>
+        <div class="flex justify-between items-center text-amber-300 font-bold">
+          <span>Bananes Brutes gagnées :</span>
+          <span id="afkEarnedBB">+0 BB</span>
+        </div>
+        <div class="flex justify-between items-center text-emerald-400 font-bold">
+          <span>Bananadollars générés :</span>
+          <span id="afkEarnedDollars">+0 $</span>
+        </div>
+      </div>
+
+      <button id="btnCloseAfkModal" class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-amber-500/20 transition">
+        Empochez la récolte ! 🍌
+      </button>
+    </div>
+  </div>
+
+  <!-- TOAST DE NOTIFICATION DOUX -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- =========================================================================
+       ARCHITECTURE JAVASCRIPT MODULAIRE (GameModel, GameEngine, AuthAndSaveManager, UIController)
+       ========================================================================= -->
+  <script>
+    /**
+     * -------------------------------------------------------------------------
+     * CONFIGURATION FIREBASE (Placeholders prêts à remplacer)
+     * Si non renseignés, AuthAndSaveManager bascule automatiquement sur localStorage.
+     * -------------------------------------------------------------------------
+     */
+    const firebaseConfig = {
+      apiKey: "AIzaSyDGynDByahbZ6z-gxpgmihKTFixeGKiro0",
+      authDomain: "bananafarm.firebaseapp.com",
+      projectId: "bananafarm",
+      storageBucket: "bananafarm.firebasestorage.app",
+      messagingSenderId: "122201515457",
+      appId: "1:122201515457:web:a2dafded1bda3e8a213b40"
+    };
+
+    /**
+     * Formateur de grands nombres lisible (1.2k, 4.5M, 8.2B, 1.1T...)
+     */
+    function formatNumber(num, decimals = 1) {
+      if (num === null || num === undefined || isNaN(num)) return "0";
+      const abs = Math.abs(num);
+      if (abs < 1000) {
+        return abs % 1 === 0 ? Math.floor(num).toString() : num.toFixed(decimals);
+      }
+      const suffixes = ["", "k", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc"];
+      const tier = Math.min(Math.floor(Math.log10(abs) / 3), suffixes.length - 1);
+      const scaled = num / Math.pow(10, tier * 3);
+      return `${scaled.toFixed(decimals)}${suffixes[tier]}`;
+    }
+
+    /**
+     * Catalogue statique des bâtiments (Agricoles, Usines de raffinage, Supports de synergie)
+     */
+    const BUILDINGS_CATALOG = {
+      // --- 1. PRODUCTEURS AGRICOLES (Génèrent des BB/s) ---
+      wild_banana: {
+        id: 'wild_banana',
+        category: 'agri',
+        name: 'Bananier Sauvage',
+        icon: '🌴',
+        baseCost: 15,
+        costCurrency: 'bb',
+        baseProdBB: 1,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        desc: 'Un bananier rustique et généreux qui pousse naturellement.'
+      },
+      macaque_post: {
+        id: 'macaque_post',
+        category: 'agri',
+        name: 'Poste de Cueillette (Macaques)',
+        icon: '🐒',
+        baseCost: 100,
+        costCurrency: 'bb',
+        baseProdBB: 6,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        desc: 'Des macaques cueilleurs triés sur le volet et rémunérés en fruits frais.'
+      },
+      tropical_greenhouse: {
+        id: 'tropical_greenhouse',
+        category: 'agri',
+        name: 'Serre Tropicale',
+        icon: '🏡',
+        baseCost: 650,
+        costCurrency: 'bb',
+        baseProdBB: 35,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        desc: 'Hygrométrie contrôlée et brumisation chaude pour des régimes géants.'
+      },
+
+      // --- 2. USINES DE RAFFINAGE (Consomment BB/s ➔ Génèrent $/s) ---
+      drying_workshop: {
+        id: 'drying_workshop',
+        category: 'factory',
+        name: 'Atelier de Séchage',
+        productName: 'Chips de banane',
+        icon: '☀️',
+        baseCost: 120,
+        costCurrency: 'bb', // Permet d'amorcer les premiers Bananadollars ($)
+        baseProdBB: 0,
+        baseConsBB: 10,
+        baseProdDollar: 1,
+        desc: 'Consomme 10 BB/s ➔ Produit 1 $/s (Chips de banane croustillantes).'
+      },
+      smoothie_bar: {
+        id: 'smoothie_bar',
+        category: 'factory',
+        name: 'Pressoir & Bar à Smoothies',
+        productName: 'Purée & Nectar',
+        icon: '🥤',
+        baseCost: 35,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 50,
+        baseProdDollar: 8,
+        desc: 'Consomme 50 BB/s ➔ Produit 8 $/s (Purée veloutée & Nectar exotique).'
+      },
+      craft_distillery: {
+        id: 'craft_distillery',
+        category: 'factory',
+        name: 'Distillerie Artisanale',
+        productName: 'Liqueur de banane dorée',
+        icon: '⚗️',
+        baseCost: 280,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 250,
+        baseProdDollar: 50,
+        desc: 'Consomme 250 BB/s ➔ Produit 50 $/s (Liqueur de banane dorée Grand Cru).'
+      },
+      chem_lab: {
+        id: 'chem_lab',
+        category: 'factory',
+        name: 'Laboratoire Chimique',
+        productName: 'Polymère biosourcé / Arôme quantique',
+        icon: '🧬',
+        baseCost: 2200,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 1000,
+        baseProdDollar: 250,
+        desc: 'Consomme 1 000 BB/s ➔ Produit 250 $/s (Polymère biosourcé & Arôme quantique).'
+      },
+
+      // --- 3. BÂTIMENTS DE SUPPORT & SYNERGIES D'ADJACENCE ---
+      irrigation_canal: {
+        id: 'irrigation_canal',
+        category: 'support',
+        name: 'Canal d\'Irrigation',
+        icon: '💧',
+        baseCost: 180,
+        costCurrency: 'bb',
+        baseProdBB: 0,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        synergyPattern: 'cross',
+        desc: 'Booste la production des parcelles agricoles adjacentes (croix +) de +30 %.'
+      },
+      conveyor_belt: {
+        id: 'conveyor_belt',
+        category: 'support',
+        name: 'Tapis Roulant Logistique',
+        icon: '🛤️',
+        baseCost: 45,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        synergyPattern: 'cross',
+        desc: 'Placé entre une parcelle agricole et une usine (+), réduit le coût en BB de l\'usine de 20 % et augmente sa vitesse de +15 %.'
+      },
+      central_silo: {
+        id: 'central_silo',
+        category: 'support',
+        name: 'Silo de Stockage Central',
+        icon: '🏛️',
+        baseCost: 120,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        synergyPattern: 'diag',
+        desc: 'Booste le rendement des usines situées en diagonale (X) de +25 %.'
+      },
+      commercial_hq: {
+        id: 'commercial_hq',
+        category: 'support',
+        name: 'Quartier Général Commercial',
+        icon: '🏢',
+        baseCost: 400,
+        costCurrency: 'dollars',
+        baseProdBB: 0,
+        baseConsBB: 0,
+        baseProdDollar: 0,
+        synergyPattern: 'line',
+        desc: 'Booste les gains en $ de toute sa ligne et sa colonne de +15 %.'
+      }
+    };
+
+    /**
+     * Catalogue de l'Arbre de Technologies R&D (Acheté en Bananadollars $)
+     */
+    const TECH_CATALOG = [
+      {
+        id: 'ergonomic_tools',
+        name: 'Outils Ergonomiques',
+        icon: '🧤',
+        cost: 40,
+        desc: 'Le clic manuel ajoute désormais +2 % de votre production brute passive totale (BB/s).'
+      },
+      {
+        id: 'vacuum_packaging',
+        name: 'Emballage Sous Vide',
+        icon: '📦',
+        cost: 220,
+        desc: 'Augmente le rendement en Bananadollars ($) de toutes les usines de +30 %.'
+      },
+      {
+        id: 'night_logistics',
+        name: 'Logistique Nocturne',
+        icon: '🌙',
+        cost: 650,
+        desc: 'Le rendement hors-ligne (AFK) passe de 50 % à 100 % de la vitesse normale.'
+      },
+      {
+        id: 'agro_patents',
+        name: 'Brevets Agroalimentaires',
+        icon: '📜',
+        cost: 1500,
+        desc: 'Réduit de 15 % la consommation de Bananes Brutes (BB) pour toutes les usines.'
+      }
+    ];
+
+    /**
+     * =========================================================================
+     * 1. GAME MODEL : État du jeu, Grille 6x6, Formules & Calcul des Synergies
+     * =========================================================================
+     */
+    class GameModel {
+      constructor() {
+        this.BASE_TILE_COST = 5; // Coût de base d'une parcelle en Bananadollars ($) ou BB
+        this.resetToDefault();
+      }
+
+      resetToDefault() {
+        this.bb = 30; // Stock initial pour construire immédiatement son premier Bananier
+        this.dollars = 0;
+
+        // Jauge Banana Frenzy (0 à 100%, ne décroît jamais)
+        this.frenzyGauge = 0;
+        this.frenzyTimer = 0; // Secondes restantes de boost x5
+
+        // Technologies débloquées
+        this.techs = {
+          ergonomic_tools: false,
+          vacuum_packaging: false,
+          night_logistics: false,
+          agro_patents: false
+        };
+
+        // Statistiques globales
+        this.stats = {
+          totalBB: 30,
+          totalDollars: 0,
+          totalClicks: 0,
+          goldenCaught: 0
+        };
+
+        this.lastSavedAt = Date.now();
+
+        // Initialisation de la grille 6x6 (36 cases)
+        // Les 6 cases centrales (lignes 2-3, colonnes 1-3) sont débloquées dès le départ
+        const initialUnlocked = new Set([7, 8, 9, 13, 14, 15]);
+        this.grid = Array.from({ length: 36 }, (_, idx) => ({
+          index: idx,
+          row: Math.floor(idx / 6),
+          col: idx % 6,
+          unlocked: initialUnlocked.has(idx),
+          building: null // { id, level, investedCost, currency, activeStatus }
+        }));
+
+        // Poser un premier Bananier Sauvage offert au centre pour démarrer la production
+        this.grid[13].building = {
+          id: 'wild_banana',
+          level: 1,
+          investedCost: 15,
+          currency: 'bb',
+          activeStatus: 'running'
+        };
+
+        // Cache des calculs de synergies et de flux
+        this.computed = {
+          cells: [],
+          totalRawBBps: 0,
+          totalMaxConsBBps: 0,
+          actualConsBBps: 0,
+          netBBps: 0,
+          totalDollarsPs: 0
+        };
+
+        this.recalculateGridSynergies();
+      }
+
+      /**
+       * Compte le nombre d'exemplaires d'un bâtiment actuellement posés sur la grille
+       */
+      getBuildingCount(buildingId) {
+        return this.grid.reduce((acc, cell) => {
+          return acc + (cell.building && cell.building.id === buildingId ? 1 : 0);
+        }, 0);
+      }
+
+      /**
+       * Formule d'équilibrage : Prix_actuel = Prix_base * (1.15 ^ Nombre_possede)
+       */
+      getBuildingPurchaseCost(buildingId) {
+        const spec = BUILDINGS_CATALOG[buildingId];
+        const count = this.getBuildingCount(buildingId);
+        return Math.ceil(spec.baseCost * Math.pow(1.15, count));
+      }
+
+      /**
+       * Coût d'amélioration d'un bâtiment posé (Niveaux 1 à 10)
+       */
+      getBuildingUpgradeCost(cellIndex) {
+        const cell = this.grid[cellIndex];
+        if (!cell || !cell.building || cell.building.level >= 10) return null;
+        const spec = BUILDINGS_CATALOG[cell.building.id];
+        return Math.ceil(spec.baseCost * Math.pow(1.35, cell.building.level));
+      }
+
+      /**
+       * Compte le nombre de parcelles débloquées
+       */
+      getUnlockedTilesCount() {
+        return this.grid.filter(c => c.unlocked).length;
+      }
+
+      /**
+       * Formule d'équilibrage : Coût_case = Coût_base * (1.3 ^ Cases_debloquees)
+       * Les 6 premières cases sont offertes, on applique l'exposant sur les cases débloquées.
+       */
+      getNextTileUnlockCost() {
+        const unlocked = this.getUnlockedTilesCount();
+        const paidTiles = Math.max(0, unlocked - 6);
+        // Coût en Bananadollars ($)
+        return Math.ceil(this.BASE_TILE_COST * Math.pow(1.3, paidTiles));
+      }
+
+      /**
+       * Puissance du clic manuel (avec R&D "Outils Ergonomiques" : +2% de la prod brute passive)
+       */
+      getClickPower() {
+        let base = 1;
+        if (this.techs.ergonomic_tools) {
+          base += this.computed.totalRawBBps * 0.02;
+        }
+        if (this.frenzyTimer > 0) {
+          base *= 5;
+        }
+        return base;
+      }
+
+      /**
+       * Retourne les coordonnées adjacentes selon un motif ('cross', 'diag', 'line')
+       */
+      getRelatedIndices(index, pattern) {
+        const r = Math.floor(index / 6);
+        const c = index % 6;
+        const result = [];
+
+        if (pattern === 'cross') {
+          const deltas = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+          for (const [dr, dc] of deltas) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < 6 && nc >= 0 && nc < 6) result.push(nr * 6 + nc);
+          }
+        } else if (pattern === 'diag') {
+          const deltas = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+          for (const [dr, dc] of deltas) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < 6 && nc >= 0 && nc < 6) result.push(nr * 6 + nc);
+          }
+        } else if (pattern === 'line') {
+          for (let i = 0; i < 36; i++) {
+            if (i === index) continue;
+            const ir = Math.floor(i / 6), ic = i % 6;
+            if (ir === r || ic === c) result.push(i);
+          }
+        }
+        return result;
+      }
+
+      /**
+       * Recalcule toutes les synergies spatiales de la grille 6x6
+       */
+      recalculateGridSynergies() {
+        const frenzyMult = this.frenzyTimer > 0 ? 5 : 1;
+        let totalRawBBps = 0;
+        let totalMaxConsBBps = 0;
+
+        const cellDetails = this.grid.map((cell, idx) => {
+          const info = {
+            index: idx,
+            synergyNotes: [],
+            prodBBMulti: 1,
+            prodDollarMulti: 1,
+            consBBMulti: 1,
+            effectiveProdBB: 0,
+            effectiveConsBB: 0,
+            effectiveProdDollar: 0
+          };
+
+          if (!cell.unlocked || !cell.building) return info;
+
+          const b = cell.building;
+          const spec = BUILDINGS_CATALOG[b.id];
+          // Multiplicateur de niveau (Niveau 1 = x1.0, chaque niveau ajoute +25%)
+          const levelMult = 1 + (b.level - 1) * 0.25;
+
+          // --- CAS 1 : BÂTIMENT AGRICOLE ---
+          if (spec.category === 'agri') {
+            let bonusPct = 0;
+            const crossNeighbors = this.getRelatedIndices(idx, 'cross');
+            for (const nIdx of crossNeighbors) {
+              const nb = this.grid[nIdx].building;
+              if (nb && nb.id === 'irrigation_canal') {
+                // +30% de base (+5% par niveau d'amélioration du canal)
+                const canalBoost = 0.30 + (nb.level - 1) * 0.05;
+                bonusPct += canalBoost;
+                info.synergyNotes.push(`💧 Canal d'Irrigation (+${Math.round(canalBoost * 100)}%)`);
+              }
+            }
+
+            info.prodBBMulti = 1 + bonusPct;
+            info.effectiveProdBB = spec.baseProdBB * levelMult * info.prodBBMulti * frenzyMult;
+            totalRawBBps += info.effectiveProdBB;
+          }
+
+          // --- CAS 2 : USINE DE RAFFINAGE ---
+          if (spec.category === 'factory') {
+            let speedBonusPct = 0;
+            let costDiscountMulti = 1;
+
+            // 1. Tapis Roulant Logistique : placé en croix (+) entre une parcelle agricole et cette usine
+            const crossNeighbors = this.getRelatedIndices(idx, 'cross');
+            for (const nIdx of crossNeighbors) {
+              const nb = this.grid[nIdx].building;
+              if (nb && nb.id === 'conveyor_belt') {
+                // Vérifie si ce Tapis Roulant touche au moins une parcelle agricole
+                const beltNeighbors = this.getRelatedIndices(nIdx, 'cross');
+                const touchesAgri = beltNeighbors.some(bIdx => {
+                  const bCell = this.grid[bIdx].building;
+                  return bCell && BUILDINGS_CATALOG[bCell.id].category === 'agri';
+                });
+
+                if (touchesAgri) {
+                  const beltSpeed = 0.15 + (nb.level - 1) * 0.03;
+                  speedBonusPct += beltSpeed;
+                  costDiscountMulti *= 0.80; // -20% de consommation BB
+                  info.synergyNotes.push(`🛤️ Tapis Roulant (-20% BB, +${Math.round(beltSpeed * 100)}% $)`);
+                }
+              }
+            }
+
+            // 2. Silo de Stockage Central : en diagonale (X) -> +25%
+            const diagNeighbors = this.getRelatedIndices(idx, 'diag');
+            for (const dIdx of diagNeighbors) {
+              const db = this.grid[dIdx].building;
+              if (db && db.id === 'central_silo') {
+                const siloBoost = 0.25 + (db.level - 1) * 0.04;
+                speedBonusPct += siloBoost;
+                info.synergyNotes.push(`🏛️ Silo Central (+${Math.round(siloBoost * 100)}% $)`);
+              }
+            }
+
+            // 3. Quartier Général Commercial : même ligne ou colonne -> +15%
+            const lineNeighbors = this.getRelatedIndices(idx, 'line');
+            for (const lIdx of lineNeighbors) {
+              const lb = this.grid[lIdx].building;
+              if (lb && lb.id === 'commercial_hq') {
+                const hqBoost = 0.15 + (lb.level - 1) * 0.03;
+                speedBonusPct += hqBoost;
+                info.synergyNotes.push(`🏢 QG Commercial (+${Math.round(hqBoost * 100)}% $)`);
+              }
+            }
+
+            // 4. Technologies R&D
+            if (this.techs.vacuum_packaging) {
+              speedBonusPct += 0.30;
+              info.synergyNotes.push(`📦 Emballage Sous Vide (+30% $)`);
+            }
+            if (this.techs.agro_patents) {
+              costDiscountMulti *= 0.85; // -15% de consommation BB
+              info.synergyNotes.push(`📜 Brevets Agro (-15% BB)`);
+            }
+
+            info.prodDollarMulti = 1 + speedBonusPct;
+            info.consBBMulti = costDiscountMulti;
+
+            // Pendant le Banana Frenzy (x5), la production en $ est quintuplée sans surconsommer 5x plus de BB
+            info.effectiveConsBB = spec.baseConsBB * levelMult * info.consBBMulti;
+            info.effectiveProdDollar = spec.baseProdDollar * levelMult * info.prodDollarMulti * frenzyMult;
+
+            totalMaxConsBBps += info.effectiveConsBB;
+          }
+
+          return info;
+        });
+
+        this.computed.cells = cellDetails;
+        this.computed.totalRawBBps = totalRawBBps;
+        this.computed.totalMaxConsBBps = totalMaxConsBBps;
+      }
+
+      /**
+       * Sérialisation propre pour Firebase Firestore & LocalStorage
+       */
+      serialize() {
+        return {
+          bb: this.bb,
+          dollars: this.dollars,
+          frenzyGauge: this.frenzyGauge,
+          frenzyTimer: this.frenzyTimer,
+          techs: { ...this.techs },
+          stats: { ...this.stats },
+          lastSavedAt: Date.now(),
+          grid: this.grid.map(c => ({
+            index: c.index,
+            unlocked: c.unlocked,
+            building: c.building ? {
+              id: c.building.id,
+              level: c.building.level,
+              investedCost: c.building.investedCost,
+              currency: c.building.currency
+            } : null
+          }))
+        };
+      }
+
+      /**
+       * Hydratation d'une sauvegarde chargée
+       */
+      deserialize(data) {
+        if (!data) return;
+        this.bb = typeof data.bb === 'number' ? data.bb : 30;
+        this.dollars = typeof data.dollars === 'number' ? data.dollars : 0;
+        this.frenzyGauge = typeof data.frenzyGauge === 'number' ? data.frenzyGauge : 0;
+        this.frenzyTimer = typeof data.frenzyTimer === 'number' ? data.frenzyTimer : 0;
+
+        if (data.techs) {
+          this.techs = { ...this.techs, ...data.techs };
+        }
+        if (data.stats) {
+          this.stats = { ...this.stats, ...data.stats };
+        }
+        if (Array.isArray(data.grid) && data.grid.length === 36) {
+          this.grid = data.grid.map((savedCell, idx) => ({
+            index: idx,
+            row: Math.floor(idx / 6),
+            col: idx % 6,
+            unlocked: Boolean(savedCell.unlocked),
+            building: savedCell.building ? {
+              id: savedCell.building.id,
+              level: savedCell.building.level || 1,
+              investedCost: savedCell.building.investedCost || BUILDINGS_CATALOG[savedCell.building.id]?.baseCost || 15,
+              currency: savedCell.building.currency || BUILDINGS_CATALOG[savedCell.building.id]?.costCurrency || 'bb',
+              activeStatus: 'running'
+            } : null
+          }));
+        }
+        this.lastSavedAt = data.lastSavedAt || Date.now();
+        this.recalculateGridSynergies();
+      }
+    }
+
+    /**
+     * =========================================================================
+     * 2. GAME ENGINE : Boucle de jeu fluide (100ms), Raffinage Chill & AFK
+     * =========================================================================
+     */
+    class GameEngine {
+      constructor(model, onTickCallback, onGoldenSpawnCallback) {
+        this.model = model;
+        this.onTick = onTickCallback;
+        this.onGoldenSpawn = onGoldenSpawnCallback;
+        this.lastTickTime = performance.now();
+        this.goldenSpawnCooldown = 35; // Premier Régime Doré au bout de 35s
+        this.intervalId = null;
+      }
+
+      start() {
+        this.lastTickTime = performance.now();
+        this.intervalId = setInterval(() => {
+          const now = performance.now();
+          const dt = Math.min(1.0, (now - this.lastTickTime) / 1000);
+          this.lastTickTime = now;
+          this.tick(dt);
+        }, 100);
+      }
+
+      /**
+       * Exécute un cycle de production/raffinage de durée `dt` (en secondes)
+       */
+      tick(dt) {
+        // 1. Gestion du décompte Banana Frenzy (x5 pendant 20s)
+        if (this.model.frenzyTimer > 0) {
+          this.model.frenzyTimer = Math.max(0, this.model.frenzyTimer - dt);
+          if (this.model.frenzyTimer === 0) {
+            this.model.recalculateGridSynergies();
+          }
+        }
+
+        this.model.recalculateGridSynergies();
+
+        // 2. Production agricole de Bananes Brutes (BB)
+        const producedBB = this.model.computed.totalRawBBps * dt;
+        this.model.bb += producedBB;
+        this.model.stats.totalBB += producedBB;
+
+        // 3. Raffinage dans les usines (Règle 100% Chill : pause sans pénalité si BB = 0)
+        let actualConsumedBBps = 0;
+        let actualProducedDollarsPs = 0;
+
+        for (let i = 0; i < 36; i++) {
+          const cell = this.model.grid[i];
+          const comp = this.model.computed.cells[i];
+          if (!cell.unlocked || !cell.building) continue;
+
+          const spec = BUILDINGS_CATALOG[cell.building.id];
+          if (spec.category !== 'factory') continue;
+
+          const neededBB = comp.effectiveConsBB * dt;
+
+          if (this.model.bb >= neededBB && neededBB > 0) {
+            // Approvisionnement complet : l'usine tourne à 100%
+            this.model.bb -= neededBB;
+            const earnedDollars = comp.effectiveProdDollar * dt;
+            this.model.dollars += earnedDollars;
+            this.model.stats.totalDollars += earnedDollars;
+
+            cell.building.activeStatus = 'running';
+            actualConsumedBBps += comp.effectiveConsBB;
+            actualProducedDollarsPs += comp.effectiveProdDollar;
+          } else if (this.model.bb > 0 && neededBB > 0) {
+            // Approvisionnement partiel proportionnel au stock de BB disponible (zéro perte !)
+            const ratio = this.model.bb / neededBB;
+            this.model.bb = 0;
+            const earnedDollars = comp.effectiveProdDollar * dt * ratio;
+            this.model.dollars += earnedDollars;
+            this.model.stats.totalDollars += earnedDollars;
+
+            cell.building.activeStatus = ratio > 0.5 ? 'running' : 'paused';
+            actualConsumedBBps += comp.effectiveConsBB * ratio;
+            actualProducedDollarsPs += comp.effectiveProdDollar * ratio;
+          } else {
+            // Stock de BB à 0 : l'usine se met en pause doucement en attendant la prochaine récolte
+            cell.building.activeStatus = 'paused';
+          }
+        }
+
+        this.model.computed.actualConsBBps = actualConsumedBBps;
+        this.model.computed.netBBps = this.model.computed.totalRawBBps - actualConsumedBBps;
+        this.model.computed.totalDollarsPs = actualProducedDollarsPs;
+
+        // 4. Apparition périodique du Régime Doré Aléatoire
+        this.goldenSpawnCooldown -= dt;
+        if (this.goldenSpawnCooldown <= 0) {
+          this.goldenSpawnCooldown = 55 + Math.random() * 45; // Toutes les 55 à 100s
+          if (this.onGoldenSpawn) this.onGoldenSpawn();
+        }
+
+        if (this.onTick) this.onTick();
+      }
+
+      /**
+       * Calcule et crédite les gains hors-ligne (AFK) plafonnés à 12 heures (43 200s)
+       */
+      calculateAndApplyAFK(elapsedSeconds) {
+        const MAX_AFK_SECONDS = 12 * 3600;
+        const clampedSeconds = Math.min(Math.max(0, elapsedSeconds), MAX_AFK_SECONDS);
+        if (clampedSeconds < 10) return null;
+
+        // Rendement AFK : 100% si "Logistique Nocturne" est débloqué, sinon 50%
+        const afkEfficiency = this.model.techs.night_logistics ? 1.0 : 0.5;
+        const effectiveSeconds = clampedSeconds * afkEfficiency;
+
+        this.model.recalculateGridSynergies();
+        const rawBBps = this.model.computed.totalRawBBps;
+        const maxConsBBps = this.model.computed.totalMaxConsBBps;
+
+        // Calcul de la capacité de raffinage soutenable pendant l'absence
+        const totalAvailableBB = this.model.bb + rawBBps * effectiveSeconds;
+        const totalNeededBB = maxConsBBps * effectiveSeconds;
+
+        let factoryRatio = 1;
+        if (totalNeededBB > 0) {
+          factoryRatio = Math.min(1, totalAvailableBB / totalNeededBB);
+        }
+
+        // Potentiel total $/s de toutes les usines à 100%
+        const maxDollarsPs = this.model.computed.cells.reduce((acc, c) => acc + c.effectiveProdDollar, 0);
+
+        const earnedDollars = maxDollarsPs * factoryRatio * effectiveSeconds;
+        const consumedBB = totalNeededBB * factoryRatio;
+        const netEarnedBB = Math.max(0, (rawBBps * effectiveSeconds) - consumedBB);
+
+        this.model.bb += netEarnedBB;
+        this.model.stats.totalBB += rawBBps * effectiveSeconds;
+        this.model.dollars += earnedDollars;
+        this.model.stats.totalDollars += earnedDollars;
+
+        return {
+          clampedSeconds,
+          afkEfficiency,
+          earnedBB: netEarnedBB,
+          earnedDollars
+        };
+      }
+    }
+
+    /**
+     * =========================================================================
+     * 3. AUTH AND SAVE MANAGER : Firebase Auth, Firestore, Fallback LocalStorage
+     * =========================================================================
+     */
+    class AuthAndSaveManager {
+      constructor(model, engine, uiCallback) {
+        this.model = model;
+        this.engine = engine;
+        this.uiCallback = uiCallback;
+        this.LOCAL_STORAGE_KEY = 'banana_tycoon_save_v1';
+
+        this.isFirebaseConfigured = false;
+        this.auth = null;
+        this.db = null;
+        this.currentUser = null;
+        this.autoSaveInterval = null;
+      }
+
+      async init() {
+        // Vérifie si l'utilisateur a remplacé les placeholders Firebase
+        const hasValidKey = firebaseConfig.apiKey &&
+          !firebaseConfig.apiKey.includes('YOUR_') &&
+          firebaseConfig.projectId &&
+          !firebaseConfig.projectId.includes('YOUR_');
+
+        if (hasValidKey && window.firebase) {
+          try {
+            if (!firebase.apps.length) {
+              firebase.initializeApp(firebaseConfig);
+            }
+            this.auth = firebase.auth();
+            this.db = firebase.firestore();
+            this.isFirebaseConfigured = true;
+
+            this.auth.onAuthStateChanged(async (user) => {
+              this.currentUser = user;
+              if (user) {
+                await this.loadFromCloudOrLocal();
+              } else {
+                this.loadFromLocal();
+              }
+              this.notifyUI();
+            });
+          } catch (err) {
+            console.warn("Bascule automatique sur LocalStorage (Firebase non initialisé) :", err);
+            this.isFirebaseConfigured = false;
+            this.loadFromLocal();
+            this.notifyUI();
+          }
+        } else {
+          // Fallback 100% transparent sur LocalStorage
+          this.isFirebaseConfigured = false;
+          this.loadFromLocal();
+          this.notifyUI();
+        }
+
+        // Sauvegarde automatique toutes les 60 secondes
+        this.autoSaveInterval = setInterval(() => {
+          this.saveGame(true);
+        }, 60000);
+
+        // Sauvegarde de sécurité à la fermeture de l'onglet
+        window.addEventListener('beforeunload', () => {
+          this.saveToLocalOnly();
+        });
+      }
+
+      saveToLocalOnly() {
+        try {
+          const payload = this.model.serialize();
+          localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(payload));
+        } catch (e) {
+          console.error("Erreur d'écriture LocalStorage :", e);
+        }
+      }
+
+      async saveGame(silent = false) {
+        const payload = this.model.serialize();
+        localStorage.setItem(this.LOCAL_STORAGE_KEY, JSON.stringify(payload));
+
+        if (this.isFirebaseConfigured && this.currentUser && this.db) {
+          try {
+            await this.db.collection('users').doc(this.currentUser.uid).set(payload, { merge: true });
+            if (!silent && this.uiCallback) {
+              this.uiCallback('toast', '☁️ Sauvegarde Cloud Firestore synchronisée !');
+            }
+          } catch (err) {
+            if (!silent && this.uiCallback) {
+              this.uiCallback('toast', '💾 Sauvegardé localement (Cloud hors-ligne).');
+            }
+          }
+        } else if (!silent && this.uiCallback) {
+          this.uiCallback('toast', '💾 Partie sauvegardée dans le navigateur !');
+        }
+
+        if (this.uiCallback) this.uiCallback('saved', new Date());
+      }
+
+      loadFromLocal() {
+        try {
+          const raw = localStorage.getItem(this.LOCAL_STORAGE_KEY);
+          if (!raw) return;
+          const data = JSON.parse(raw);
+          this.applyLoadedDataWithAFK(data);
+        } catch (e) {
+          console.warn("Impossible de lire la sauvegarde locale :", e);
+        }
+      }
+
+      async loadFromCloudOrLocal() {
+        if (!this.isFirebaseConfigured || !this.currentUser || !this.db) {
+          this.loadFromLocal();
+          return;
+        }
+        try {
+          const doc = await this.db.collection('users').doc(this.currentUser.uid).get();
+          if (doc.exists) {
+            const cloudData = doc.data();
+            this.applyLoadedDataWithAFK(cloudData);
+            if (this.uiCallback) this.uiCallback('toast', '☁️ Plantation chargée depuis Firebase Cloud !');
+          } else {
+            // Première connexion Cloud : on pousse la partie locale vers Firestore
+            await this.saveGame(true);
+          }
+        } catch (e) {
+          console.warn("Erreur lecture Firestore, fallback LocalStorage :", e);
+          this.loadFromLocal();
+        }
+      }
+
+      applyLoadedDataWithAFK(data) {
+        const now = Date.now();
+        const lastSaved = data.lastSavedAt || now;
+        const elapsedSeconds = Math.floor((now - lastSaved) / 1000);
+
+        this.model.deserialize(data);
+
+        if (elapsedSeconds >= 15) {
+          const afkReport = this.engine.calculateAndApplyAFK(elapsedSeconds);
+          if (afkReport && (afkReport.earnedBB > 0 || afkReport.earnedDollars > 0) && this.uiCallback) {
+            this.uiCallback('afk', afkReport);
+          }
+        }
+      }
+
+      async loginWithEmail(email, password) {
+        if (!this.isFirebaseConfigured) {
+          if (this.uiCallback) {
+            this.uiCallback('toast', 'ℹ️ Renseignez vos clés firebaseConfig pour activer le Cloud (LocalStorage actif).');
+          }
+          return;
+        }
+        try {
+          await this.auth.signInWithEmailAndPassword(email, password);
+          if (this.uiCallback) this.uiCallback('toast', '✅ Connecté avec succès !');
+        } catch (signInErr) {
+          // Si le compte n'existe pas encore, on le crée automatiquement (expérience 100% chill)
+          try {
+            await this.auth.createUserWithEmailAndPassword(email, password);
+            await this.saveGame(true);
+            if (this.uiCallback) this.uiCallback('toast', '🎉 Compte Cloud créé et synchronisé !');
+          } catch (createErr) {
+            if (this.uiCallback) this.uiCallback('toast', `⚠️ ${createErr.message}`);
+          }
+        }
+      }
+
+      async loginAnonymously() {
+        if (!this.isFirebaseConfigured) {
+          if (this.uiCallback) {
+            this.uiCallback('toast', '🕶️ Mode Invité Local actif (vos données sont gardées sur cet appareil).');
+          }
+          return;
+        }
+        try {
+          await this.auth.signInAnonymously();
+          await this.saveGame(true);
+          if (this.uiCallback) this.uiCallback('toast', '🕶️ Connecté en Invité Cloud Firebase !');
+        } catch (err) {
+          if (this.uiCallback) this.uiCallback('toast', `⚠️ ${err.message}`);
+        }
+      }
+
+      async logout() {
+        if (this.isFirebaseConfigured && this.auth) {
+          await this.auth.signOut();
+          if (this.uiCallback) this.uiCallback('toast', '👋 Déconnecté du Cloud (sauvegarde locale active).');
+        }
+      }
+
+      notifyUI() {
+        if (this.uiCallback) {
+          this.uiCallback('authState', {
+            isFirebaseConfigured: this.isFirebaseConfigured,
+            user: this.currentUser
+          });
+        }
+      }
+    }
+
+    /**
+     * =========================================================================
+     * 4. UI CONTROLLER : Rendu de la Grille 6x6, Onglets, Clics & Animations
+     * =========================================================================
+     */
+    class UIController {
+      constructor(model, engine, saveManager) {
+        this.model = model;
+        this.engine = engine;
+        this.saveManager = saveManager;
+
+        this.currentMode = 'inspect'; // 'inspect' | 'move' | 'upgrade' | 'sell'
+        this.selectedBuildId = null;  // ID du bâtiment sélectionné dans la boutique
+        this.selectedCellIndex = 13;  // Case inspectée par défaut
+        this.moveSourceIndex = null;  // Case source lors d'un déplacement
+        this.hoveredCellIndex = null; // Case survolée pour prévisualiser les synergies
+      }
+
+      init() {
+        this.bindEvents();
+        this.renderGridStructure();
+        this.renderShopAndTechs();
+        this.updateAll();
+      }
+
+      bindEvents() {
+        // Clic sur le Gros Régime de Bananes
+        const btnBigBanana = document.getElementById('btnBigBanana');
+        btnBigBanana.addEventListener('click', (e) => this.handleManualClick(e));
+
+        // Boutons de mode de la grille
+        document.querySelectorAll('.grid-mode-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            this.setGridMode(btn.dataset.mode);
+          });
+        });
+
+        // Annuler la sélection de construction
+        document.getElementById('btnCancelBuildSelection').addEventListener('click', () => {
+          this.selectBuildingToPlace(null);
+        });
+        window.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            this.selectBuildingToPlace(null);
+            this.moveSourceIndex = null;
+            this.setGridMode('inspect');
+          }
+        });
+
+        // Navigation Onglets Volet Droit
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            document.querySelectorAll('.tab-btn').forEach(b => {
+              b.classList.remove('bg-emerald-600', 'text-white');
+              b.classList.add('text-slate-400');
+            });
+            btn.classList.add('bg-emerald-600', 'text-white');
+            btn.classList.remove('text-slate-400');
+
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+          });
+        });
+
+        // Bouton Sauvegarde Rapide
+        document.getElementById('btnQuickSave').addEventListener('click', () => {
+          this.saveManager.saveGame(false);
+        });
+
+        // Régime Doré Aléatoire
+        document.getElementById('goldenBananaFloating').addEventListener('click', (e) => {
+          this.collectGoldenBanana(e);
+        });
+
+        // Modal AFK
+        document.getElementById('btnCloseAfkModal').addEventListener('click', () => {
+          document.getElementById('afkModal').classList.add('hidden');
+        });
+
+        // Authentification Firebase & Outils Profil
+        document.getElementById('btnEmailLogin').addEventListener('click', () => {
+          const email = document.getElementById('authEmailInput').value.trim();
+          const pass = document.getElementById('authPasswordInput').value.trim();
+          if (!email || pass.length < 6) {
+            this.showToast('⚠️ Veuillez saisir un email valide et un mot de passe (6+ caractères).');
+            return;
+          }
+          this.saveManager.loginWithEmail(email, pass);
+        });
+
+        document.getElementById('btnAnonLogin').addEventListener('click', () => {
+          this.saveManager.loginAnonymously();
+        });
+
+        document.getElementById('btnLogout').addEventListener('click', () => {
+          this.saveManager.logout();
+        });
+
+        document.getElementById('btnSimulateAFK').addEventListener('click', () => {
+          const report = this.engine.calculateAndApplyAFK(3600); // 1 heure
+          if (report) this.showAfkModal(report);
+        });
+
+        document.getElementById('btnSpawnGoldenTest').addEventListener('click', () => {
+          this.spawnGoldenBanana();
+        });
+
+        document.getElementById('btnResetGame').addEventListener('click', () => {
+          if (confirm('Voulez-vous vraiment réinitialiser votre plantation à zéro ?')) {
+            localStorage.removeItem(this.saveManager.LOCAL_STORAGE_KEY);
+            this.model.resetToDefault();
+            this.selectedCellIndex = 13;
+            this.renderShopAndTechs();
+            this.updateAll();
+            this.showToast('🌱 Nouvelle plantation initialisée !');
+          }
+        });
+      }
+
+      /**
+       * Gestion du clic manuel sur le Gros Régime (+X BB et +2% Banana Frenzy)
+       */
+      handleManualClick(e) {
+        const gain = this.model.getClickPower();
+        this.model.bb += gain;
+        this.model.stats.totalBB += gain;
+        this.model.stats.totalClicks += 1;
+
+        // Monte la jauge Banana Frenzy de +2% si elle n'est pas déjà active
+        if (this.model.frenzyTimer <= 0) {
+          this.model.frenzyGauge = Math.min(100, this.model.frenzyGauge + 2);
+          if (this.model.frenzyGauge >= 100) {
+            this.triggerBananaFrenzy();
+          }
+        }
+
+        // Popup flottant "+X BB"
+        const x = e.clientX || (window.innerWidth / 4);
+        const y = e.clientY || (window.innerHeight / 2);
+        this.spawnFloatingText(x, y, `+${formatNumber(gain, 1)} BB`, 'text-amber-300 font-extrabold text-sm');
+
+        this.updateMetricsAndFrenzy();
+      }
+
+      triggerBananaFrenzy() {
+        this.model.frenzyGauge = 0;
+        this.model.frenzyTimer = 20.0;
+        this.model.recalculateGridSynergies();
+        this.showToast('⚡ BANANA FRENZY ACTIVÉ ! Production x5 sur toute la grille pendant 20s !');
+
+        if (window.confetti) {
+          confetti({ particleCount: 70, spread: 65, origin: { y: 0.6 } });
+        }
+      }
+
+      spawnFloatingText(x, y, text, classes) {
+        const el = document.createElement('div');
+        el.className = `floating-text font-mono drop-shadow ${classes}`;
+        el.style.left = `${x - 24 + (Math.random() * 24 - 12)}px`;
+        el.style.top = `${y - 18}px`;
+        el.textContent = text;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 950);
+      }
+
+      /**
+       * Apparition et collecte du Régime Doré Aléatoire (+15 min de production passive)
+       */
+      spawnGoldenBanana() {
+        const btn = document.getElementById('goldenBananaFloating');
+        const maxX = Math.max(120, window.innerWidth - 140);
+        const maxY = Math.max(120, window.innerHeight - 140);
+        btn.style.left = `${60 + Math.random() * (maxX - 60)}px`;
+        btn.style.top = `${80 + Math.random() * (maxY - 80)}px`;
+        btn.classList.remove('hidden');
+
+        // Reste à l'écran pendant 18 secondes
+        clearTimeout(this.goldenHideTimeout);
+        this.goldenHideTimeout = setTimeout(() => {
+          btn.classList.add('hidden');
+        }, 18000);
+      }
+
+      collectGoldenBanana(e) {
+        const btn = document.getElementById('goldenBananaFloating');
+        btn.classList.add('hidden');
+        clearTimeout(this.goldenHideTimeout);
+
+        // 15 minutes (900 secondes) de production passive (avec minimum généreux au début)
+        const bonusBB = Math.max(150, this.model.computed.totalRawBBps * 900);
+        const bonusDollars = Math.max(15, this.model.computed.totalDollarsPs * 900);
+
+        this.model.bb += bonusBB;
+        this.model.stats.totalBB += bonusBB;
+        this.model.dollars += bonusDollars;
+        this.model.stats.totalDollars += bonusDollars;
+        this.model.stats.goldenCaught += 1;
+
+        this.spawnFloatingText(
+          e.clientX || window.innerWidth / 2,
+          e.clientY || window.innerHeight / 2,
+          `✨ +${formatNumber(bonusBB)} BB & +${formatNumber(bonusDollars)} $ !`,
+          'text-yellow-300 font-extrabold text-base'
+        );
+
+        this.showToast(`✨ Régime Doré récolté ! +15 min de production (+${formatNumber(bonusBB)} BB & +${formatNumber(bonusDollars)} $)`);
+        if (window.confetti) {
+          confetti({ particleCount: 90, spread: 80, origin: { y: 0.5 } });
+        }
+        this.updateAll();
+      }
+
+      /**
+       * Changement du mode d'outil sur la grille
+       */
+      setGridMode(mode) {
+        this.currentMode = mode;
+        this.moveSourceIndex = null;
+        if (mode !== 'inspect') {
+          this.selectBuildingToPlace(null);
+        }
+
+        document.querySelectorAll('.grid-mode-btn').forEach(btn => {
+          if (btn.dataset.mode === mode) {
+            btn.classList.add('bg-emerald-600', 'text-white');
+            btn.classList.remove('text-slate-300');
+          } else {
+            btn.classList.remove('bg-emerald-600', 'text-white');
+            btn.classList.add('text-slate-300');
+          }
+        });
+
+        const hints = {
+          inspect: 'Cliquez sur une parcelle pour inspecter ses synergies ou débloquer un terrain.',
+          move: 'Mode Déplacement : cliquez sur un bâtiment puis sur la case de destination (échange possible).',
+          upgrade: 'Mode Amélioration : cliquez sur un bâtiment pour le faire monter de niveau (Nv. 1 à 10).',
+          sell: 'Mode Vente 100% : cliquez sur un bâtiment pour le vendre et récupérer 100 % de sa valeur investie.'
+        };
+        document.getElementById('gridActionHint').textContent = hints[mode] || '';
+        this.updateGridVisuals();
+      }
+
+      /**
+       * Sélection d'un bâtiment dans la boutique pour le poser sur la grille
+       */
+      selectBuildingToPlace(buildingId) {
+        this.selectedBuildId = buildingId;
+        const banner = document.getElementById('selectedBuildBanner');
+
+        if (!buildingId) {
+          banner.classList.add('hidden');
+          this.RenderShopHighlight();
+          return;
+        }
+
+        this.setGridMode('inspect');
+        this.selectedBuildId = buildingId;
+        const spec = BUILDINGS_CATALOG[buildingId];
+        const cost = this.model.getBuildingPurchaseCost(buildingId);
+        const unit = spec.costCurrency === 'bb' ? 'BB' : '$';
+
+        document.getElementById('selectedBuildIcon').textContent = spec.icon;
+        document.getElementById('selectedBuildName').textContent = spec.name;
+        document.getElementById('selectedBuildCost').textContent = `(${formatNumber(cost)} ${unit})`;
+        banner.classList.remove('hidden');
+
+        this.RenderShopHighlight();
+      }
+
+      RenderShopHighlight() {
+        document.querySelectorAll('[data-shop-id]').forEach(card => {
+          if (card.dataset.shopId === this.selectedBuildId) {
+            card.classList.add('ring-2', 'ring-amber-400', 'bg-slate-800');
+          } else {
+            card.classList.remove('ring-2', 'ring-amber-400', 'bg-slate-800');
+          }
+        });
+      }
+
+      /**
+       * Création initiale des 36 cellules DOM de la grille 6x6
+       */
+      renderGridStructure() {
+        const container = document.getElementById('plantationGrid');
+        container.innerHTML = '';
+
+        for (let i = 0; i < 36; i++) {
+          const btn = document.createElement('button');
+          btn.dataset.index = i;
+          btn.className = 'relative rounded-xl border transition-all duration-150 flex flex-col items-center justify-between p-1.5 text-center select-none focus:outline-none group overflow-hidden';
+
+          btn.addEventListener('click', () => this.handleCellClick(i));
+          btn.addEventListener('mouseenter', () => {
+            this.hoveredCellIndex = i;
+            this.updateGridSynergyHighlights();
+          });
+          btn.addEventListener('mouseleave', () => {
+            this.hoveredCellIndex = null;
+            this.updateGridSynergyHighlights();
+          });
+
+          container.appendChild(btn);
+        }
+      }
+
+      /**
+       * Interaction sur une case de la grille 6x6
+       */
+      handleCellClick(index) {
+        const cell = this.model.grid[index];
+
+        // 1. Si la parcelle est verrouillée : proposer le déblocage en Bananadollars ($)
+        if (!cell.unlocked) {
+          const cost = this.model.getNextTileUnlockCost();
+          if (this.model.dollars >= cost) {
+            this.model.dollars -= cost;
+            cell.unlocked = true;
+            this.selectedCellIndex = index;
+            this.model.recalculateGridSynergies();
+            this.showToast(`🗺️ Nouvelle parcelle débloquée (-${formatNumber(cost)} $) !`);
+            this.updateAll();
+          } else {
+            this.showToast(`💵 Il vous faut ${formatNumber(cost)} $ pour débloquer cette parcelle.`);
+          }
+          return;
+        }
+
+        // 2. Si un bâtiment de la boutique est sélectionné et que la case est libre : construire !
+        if (this.selectedBuildId && !cell.building) {
+          this.buyAndPlaceBuilding(index, this.selectedBuildId);
+          return;
+        }
+
+        // 3. Actions selon le mode actif
+        if (this.currentMode === 'move') {
+          if (this.moveSourceIndex === null) {
+            if (!cell.building) {
+              this.showToast('🔄 Choisissez d\'abord une parcelle contenant un bâtiment à déplacer.');
+              return;
+            }
+            this.moveSourceIndex = index;
+            this.showToast('🔄 Cliquez maintenant sur la parcelle de destination.');
+            this.updateGridVisuals();
+          } else if (this.moveSourceIndex === index) {
+            this.moveSourceIndex = null;
+            this.updateGridVisuals();
+          } else {
+            // Échange les deux bâtiments (déplacement gratuit 100% chill)
+            const temp = this.model.grid[this.moveSourceIndex].building;
+            this.model.grid[this.moveSourceIndex].building = cell.building;
+            cell.building = temp;
+            this.moveSourceIndex = null;
+            this.selectedCellIndex = index;
+            this.model.recalculateGridSynergies();
+            this.showToast('✅ Bâtiment déplacé et synergies recalculées !');
+            this.updateAll();
+          }
+          return;
+        }
+
+        if (this.currentMode === 'upgrade') {
+          if (cell.building) {
+            this.upgradeBuildingAt(index);
+          }
+          return;
+        }
+
+        if (this.currentMode === 'sell') {
+          if (cell.building) {
+            this.sellBuildingAt(index);
+          }
+          return;
+        }
+
+        // Mode Inspecter par défaut
+        this.selectedCellIndex = index;
+        this.updateGridVisuals();
+        this.renderCellInspector();
+      }
+
+      buyAndPlaceBuilding(cellIndex, buildingId) {
+        const spec = BUILDINGS_CATALOG[buildingId];
+        const cost = this.model.getBuildingPurchaseCost(buildingId);
+
+        if (spec.costCurrency === 'bb') {
+          if (this.model.bb < cost) {
+            this.showToast(`🍌 Pas assez de Bananes Brutes (${formatNumber(cost)} BB requis).`);
+            return;
+          }
+          this.model.bb -= cost;
+        } else {
+          if (this.model.dollars < cost) {
+            this.showToast(`💵 Pas assez de Bananadollars (${formatNumber(cost)} $ requis).`);
+            return;
+          }
+          this.model.dollars -= cost;
+        }
+
+        this.model.grid[cellIndex].building = {
+          id: buildingId,
+          level: 1,
+          investedCost: cost,
+          currency: spec.costCurrency,
+          activeStatus: 'running'
+        };
+
+        this.selectedCellIndex = cellIndex;
+        this.model.recalculateGridSynergies();
+
+        // Met à jour la bannière avec le nouveau coût échelonné
+        this.selectBuildingToPlace(buildingId);
+        this.renderShopAndTechs();
+        this.updateAll();
+      }
+
+      upgradeBuildingAt(cellIndex) {
+        const cell = this.model.grid[cellIndex];
+        if (!cell || !cell.building) return;
+
+        if (cell.building.level >= 10) {
+          this.showToast('🌟 Ce bâtiment est déjà au Niveau Maximum (Nv. 10) !');
+          return;
+        }
+
+        const cost = this.model.getBuildingUpgradeCost(cellIndex);
+        const currency = cell.building.currency;
+
+        if (currency === 'bb') {
+          if (this.model.bb < cost) {
+            this.showToast(`🍌 ${formatNumber(cost)} BB requis pour améliorer.`);
+            return;
+          }
+          this.model.bb -= cost;
+        } else {
+          if (this.model.dollars < cost) {
+            this.showToast(`💵 ${formatNumber(cost)} $ requis pour améliorer.`);
+            return;
+          }
+          this.model.dollars -= cost;
+        }
+
+        cell.building.level += 1;
+        cell.building.investedCost += cost;
+        this.model.recalculateGridSynergies();
+        this.updateAll();
+      }
+
+      sellBuildingAt(cellIndex) {
+        const cell = this.model.grid[cellIndex];
+        if (!cell || !cell.building) return;
+
+        const spec = BUILDINGS_CATALOG[cell.building.id];
+        const refund = cell.building.investedCost;
+        const unit = cell.building.currency === 'bb' ? 'BB' : '$';
+
+        if (cell.building.currency === 'bb') {
+          this.model.bb += refund;
+        } else {
+          this.model.dollars += refund;
+        }
+
+        cell.building = null;
+        this.model.recalculateGridSynergies();
+        this.showToast(`💰 ${spec.name} vendu : 100 % remboursé (+${formatNumber(refund)} ${unit}) !`);
+        this.renderShopAndTechs();
+        this.updateAll();
+      }
+
+      /**
+       * Surligne les cases affectées par les synergies lors du survol ou de la sélection
+       */
+      updateGridSynergyHighlights() {
+        const activeIdx = this.hoveredCellIndex !== null ? this.hoveredCellIndex : this.selectedCellIndex;
+        const gridButtons = document.getElementById('plantationGrid').children;
+
+        for (let i = 0; i < 36; i++) {
+          gridButtons[i].classList.remove('ring-2', 'ring-sky-400', 'ring-amber-300');
+        }
+
+        if (activeIdx === null || !this.model.grid[activeIdx]) return;
+        const cell = this.model.grid[activeIdx];
+        const bId = cell.building ? cell.building.id : this.selectedBuildId;
+        if (!bId) return;
+
+        const spec = BUILDINGS_CATALOG[bId];
+        if (!spec || !spec.synergyPattern) return;
+
+        const targets = this.model.getRelatedIndices(activeIdx, spec.synergyPattern);
+        for (const tIdx of targets) {
+          gridButtons[tIdx].classList.add('ring-2', 'ring-sky-400');
+        }
+      }
+
+      /**
+       * Mise à jour visuelle des 36 cases de la grille
+       */
+      updateGridVisuals() {
+        const gridButtons = document.getElementById('plantationGrid').children;
+        const nextTileCost = this.model.getNextTileUnlockCost();
+        document.getElementById('nextTileCostLabel').textContent =
+          this.model.getUnlockedTilesCount() >= 36
+            ? 'Toutes les parcelles débloquées (36/36) !'
+            : `Prochaine parcelle : ${formatNumber(nextTileCost)} $`;
+
+        for (let i = 0; i < 36; i++) {
+          const cell = this.model.grid[i];
+          const comp = this.model.computed.cells[i];
+          const btn = gridButtons[i];
+
+          // Parcelle verrouillée
+          if (!cell.unlocked) {
+            const canAffordTile = this.model.dollars >= nextTileCost;
+            btn.className = `relative rounded-xl border border-dashed ${
+              canAffordTile
+                ? 'border-emerald-600/70 bg-slate-950/70 hover:bg-emerald-950/50 text-emerald-300'
+                : 'border-slate-800 bg-slate-950/40 text-slate-600'
+            } flex flex-col items-center justify-center p-1 text-center transition cursor-pointer`;
+            btn.innerHTML = `
+              <span class="text-base opacity-75">🔒</span>
+              <span class="text-[10px] font-mono font-bold mt-0.5">${formatNumber(nextTileCost)} $</span>
+            `;
+            continue;
+          }
+
+          // Parcelle débloquée mais vide
+          if (!cell.building) {
+            const isSelected = this.selectedCellIndex === i;
+            btn.className = `relative rounded-xl border ${
+              isSelected ? 'border-amber-400 bg-slate-800/80' : 'border-emerald-900/60 bg-slate-900/50 hover:bg-slate-800/60'
+            } flex flex-col items-center justify-center p-1 text-center transition cursor-pointer`;
+            btn.innerHTML = `
+              <span class="text-xs text-slate-600 group-hover:text-emerald-400 transition">+</span>
+            `;
+            continue;
+          }
+
+          // Parcelle occupée par un bâtiment
+          const b = cell.building;
+          const spec = BUILDINGS_CATALOG[b.id];
+          const isSelected = this.selectedCellIndex === i;
+          const isMoveSource = this.moveSourceIndex === i;
+
+          let colorClasses = 'border-emerald-500/50 bg-emerald-950/40';
+          if (spec.category === 'factory') {
+            colorClasses = b.activeStatus === 'paused'
+              ? 'border-amber-500/40 bg-amber-950/20 opacity-85'
+              : 'border-amber-500/60 bg-amber-950/40';
+          } else if (spec.category === 'support') {
+            colorClasses = 'border-sky-500/60 bg-sky-950/40';
+          }
+
+          const selectionRing = isMoveSource
+            ? 'ring-2 ring-amber-300 scale-95'
+            : isSelected
+            ? 'ring-2 ring-white'
+            : '';
+
+          btn.className = `relative rounded-xl border ${colorClasses} ${selectionRing} hover:brightness-110 flex flex-col items-center justify-between p-1.5 text-center transition cursor-pointer`;
+
+          // Badge de niveau et statut usine
+          let topBadge = `<span class="text-[9px] font-mono font-bold px-1 rounded bg-slate-950/80 text-slate-200">Nv.${b.level}</span>`;
+          let statusDot = '';
+          if (spec.category === 'factory') {
+            statusDot = b.activeStatus === 'paused'
+              ? `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title="En pause (attente de BB)"></span>`
+              : `<span class="w-2 h-2 rounded-full bg-emerald-400" title="Production active"></span>`;
+          } else if (comp.synergyNotes.length > 0) {
+            statusDot = `<span class="text-[9px] font-bold text-amber-300" title="${comp.synergyNotes.join(', ')}">✨</span>`;
+          }
+
+          // Texte de production au bas de la case
+          let bottomMetric = '';
+          if (spec.category === 'agri') {
+            bottomMetric = `<span class="text-[10px] font-mono font-bold text-amber-300">+${formatNumber(comp.effectiveProdBB, 1)}</span>`;
+          } else if (spec.category === 'factory') {
+            bottomMetric = b.activeStatus === 'paused'
+              ? `<span class="text-[9px] font-mono font-semibold text-amber-300">Pause BB</span>`
+              : `<span class="text-[10px] font-mono font-bold text-emerald-300">+${formatNumber(comp.effectiveProdDollar, 1)}$</span>`;
+          } else {
+            bottomMetric = `<span class="text-[9px] font-semibold text-sky-300">Synergie</span>`;
+          }
+
+          btn.innerHTML = `
+            <div class="w-full flex items-center justify-between">
+              ${topBadge}
+              ${statusDot}
+            </div>
+            <div class="text-xl sm:text-2xl my-auto leading-none">${spec.icon}</div>
+            <div class="w-full truncate">${bottomMetric}</div>
+          `;
+        }
+
+        this.updateGridSynergyHighlights();
+      }
+
+      /**
+       * Affiche les détails de la parcelle sélectionnée sous la grille
+       */
+      renderCellInspector() {
+        const box = document.getElementById('inspectorContent');
+        const idx = this.selectedCellIndex;
+        if (idx === null || !this.model.grid[idx]) return;
+
+        const cell = this.model.grid[idx];
+        const comp = this.model.computed.cells[idx];
+
+        if (!cell.unlocked) {
+          const cost = this.model.getNextTileUnlockCost();
+          box.innerHTML = `
+            <div class="flex flex-wrap items-center justify-between gap-3 w-full">
+              <div>
+                <div class="font-bold text-white text-sm">🔒 Parcelle Verrouillée (#${idx + 1})</div>
+                <p class="text-xs text-slate-400">Débloquez cette parcelle pour agrandir votre complexe et créer de nouvelles synergies.</p>
+              </div>
+              <button id="btnInspectorUnlock" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition">
+                Débloquer (${formatNumber(cost)} $)
+              </button>
+            </div>
+          `;
+          document.getElementById('btnInspectorUnlock').onclick = () => this.handleCellClick(idx);
+          return;
+        }
+
+        if (!cell.building) {
+          box.innerHTML = `
+            <div class="flex items-center justify-between w-full">
+              <div>
+                <div class="font-bold text-emerald-300 text-sm">🌱 Parcelle Fertile Libre (#${idx + 1} — Ligne ${cell.row + 1}, Col ${cell.col + 1})</div>
+                <p class="text-xs text-slate-400">Sélectionnez un bâtiment dans le volet de droite puis cliquez sur cette case pour le construire.</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        const b = cell.building;
+        const spec = BUILDINGS_CATALOG[b.id];
+        const upgCost = this.model.getBuildingUpgradeCost(idx);
+        const unit = b.currency === 'bb' ? 'BB' : '$';
+
+        let statsLine = '';
+        if (spec.category === 'agri') {
+          statsLine = `Production : <strong class="text-amber-300 font-mono">+${formatNumber(comp.effectiveProdBB, 2)} BB/s</strong>`;
+        } else if (spec.category === 'factory') {
+          const stateBadge = b.activeStatus === 'paused'
+            ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">En pause d'approvisionnement BB</span>`
+            : `<span class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Raffinage Actif (100%)</span>`;
+          statsLine = `${stateBadge} • Conso : <strong class="text-amber-300 font-mono">-${formatNumber(comp.effectiveConsBB, 1)} BB/s</strong> ➔ Produit : <strong class="text-emerald-400 font-mono">+${formatNumber(comp.effectiveProdDollar, 2)} $/s</strong>`;
+        } else {
+          statsLine = `<span class="text-sky-300">${spec.desc}</span>`;
+        }
+
+        const synergiesHtml = comp.synergyNotes.length > 0
+          ? `<div class="flex flex-wrap gap-1.5 mt-2">${comp.synergyNotes.map(s => `<span class="px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-200 text-[11px]">${s}</span>`).join('')}</div>`
+          : `<div class="text-[11px] text-slate-400 mt-1">Aucune synergie active sur ce bâtiment pour le moment.</div>`;
+
+        box.innerHTML = `
+          <div class="w-full space-y-2.5">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="flex items-center gap-2.5">
+                <span class="text-3xl">${spec.icon}</span>
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-extrabold text-white text-sm">${spec.name}</span>
+                    <span class="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-amber-300 font-bold">Niveau ${b.level} / 10</span>
+                  </div>
+                  <div class="text-xs text-slate-300 mt-0.5">${statsLine}</div>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                ${
+                  upgCost !== null
+                    ? `<button id="btnInspectorUpgrade" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs transition">
+                        ⬆️ Nv.${b.level + 1} (${formatNumber(upgCost)}${unit})
+                       </button>`
+                    : `<span class="px-3 py-1.5 rounded-xl bg-slate-800 text-amber-300 font-bold text-xs">🌟 Niveau Max</span>`
+                }
+                <button id="btnInspectorMove" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs transition">
+                  🔄 Déplacer
+                </button>
+                <button id="btnInspectorSell" class="px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 text-rose-200 font-semibold text-xs transition">
+                  💰 Vendre (+${formatNumber(b.investedCost)} ${unit})
+                </button>
+              </div>
+            </div>
+            ${synergiesHtml}
+          </div>
+        `;
+
+        if (upgCost !== null) {
+          document.getElementById('btnInspectorUpgrade').onclick = () => this.upgradeBuildingAt(idx);
+        }
+        document.getElementById('btnInspectorMove').onclick = () => {
+          this.setGridMode('move');
+          this.moveSourceIndex = idx;
+          this.showToast('🔄 Cliquez sur une autre case débloquée pour y déplacer ce bâtiment.');
+          this.updateGridVisuals();
+        };
+        document.getElementById('btnInspectorSell').onclick = () => this.sellBuildingAt(idx);
+      }
+
+      /**
+       * Rendu des cartes de la Boutique (Agricole, Usines, Support) et de la R&D
+       */
+      renderShopAndTechs() {
+        const agriContainer = document.getElementById('agriShopList');
+        const factoryContainer = document.getElementById('factoryShopList');
+        const supportContainer = document.getElementById('supportShopList');
+        const rndContainer = document.getElementById('rndList');
+
+        agriContainer.innerHTML = '';
+        factoryContainer.innerHTML = '';
+        supportContainer.innerHTML = '';
+        rndContainer.innerHTML = '';
+
+        Object.values(BUILDINGS_CATALOG).forEach(spec => {
+          const cost = this.model.getBuildingPurchaseCost(spec.id);
+          const count = this.model.getBuildingCount(spec.id);
+          const unit = spec.costCurrency === 'bb' ? 'BB' : '$';
+          const isSelected = this.selectedBuildId === spec.id;
+
+          const card = document.createElement('div');
+          card.dataset.shopId = spec.id;
+          card.className = `p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-amber-400/60 transition cursor-pointer flex items-center justify-between gap-3 ${
+            isSelected ? 'ring-2 ring-amber-400 bg-slate-800' : ''
+          }`;
+
+          let badgeLine = '';
+          if (spec.category === 'agri') {
+            badgeLine = `<span class="text-xs font-mono font-bold text-amber-300">+${spec.baseProdBB} BB/s</span>`;
+          } else if (spec.category === 'factory') {
+            badgeLine = `<span class="text-xs font-mono font-bold text-emerald-400">-${spec.baseConsBB} BB/s ➔ +${spec.baseProdDollar} $/s</span>`;
+          } else {
+            badgeLine = `<span class="text-xs font-semibold text-sky-300">Synergie Spatiale</span>`;
+          }
+
+          card.innerHTML = `
+            <div class="flex items-start gap-3">
+              <div class="w-11 h-11 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center text-2xl shrink-0">
+                ${spec.icon}
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-extrabold text-white">${spec.name}</h4>
+                  <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">Possédés: ${count}</span>
+                </div>
+                <div class="mt-0.5">${badgeLine}</div>
+                <p class="text-[11px] text-slate-400 mt-1 leading-snug">${spec.desc}</p>
+              </div>
+            </div>
+            <button class="shrink-0 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 font-mono font-bold text-xs">
+              ${formatNumber(cost)} ${unit}
+            </button>
+          `;
+
+          card.addEventListener('click', () => {
+            this.selectBuildingToPlace(spec.id);
+          });
+
+          if (spec.category === 'agri') agriContainer.appendChild(card);
+          else if (spec.category === 'factory') factoryContainer.appendChild(card);
+          else supportContainer.appendChild(card);
+        });
+
+        // Arbre R&D
+        TECH_CATALOG.forEach(tech => {
+          const unlocked = this.model.techs[tech.id];
+          const card = document.createElement('div');
+          card.className = `p-3 rounded-xl border ${
+            unlocked
+              ? 'bg-emerald-950/30 border-emerald-500/40'
+              : 'bg-slate-950/80 border-slate-800'
+          } flex items-center justify-between gap-3`;
+
+          card.innerHTML = `
+            <div class="flex items-start gap-3">
+              <div class="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center text-xl shrink-0">
+                ${tech.icon}
+              </div>
+              <div>
+                <h4 class="text-xs font-extrabold text-white">${tech.name}</h4>
+                <p class="text-[11px] text-slate-400 mt-0.5 leading-snug">${tech.desc}</p>
+              </div>
+            </div>
+            ${
+              unlocked
+                ? `<span class="shrink-0 px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-300 font-bold text-xs">✅ Acquis</span>`
+                : `<button data-tech-id="${tech.id}" class="shrink-0 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-xs transition">
+                    ${formatNumber(tech.cost)}$
+                   </button>`
+            }
+          `;
+
+          if (!unlocked) {
+            card.querySelector('button').addEventListener('click', () => {
+              this.buyTech(tech);
+            });
+          }
+
+          rndContainer.appendChild(card);
+        });
+      }
+
+      buyTech(tech) {
+        if (this.model.techs[tech.id]) return;
+        if (this.model.dollars < tech.cost) {
+          this.showToast(`💵 Il vous faut ${formatNumber(tech.cost)} $ pour financer cette recherche.`);
+          return;
+        }
+        this.model.dollars -= tech.cost;
+        this.model.techs[tech.id] = true;
+        this.model.recalculateGridSynergies();
+        this.showToast(`🔬 Brevet débloqué : ${tech.name} !`);
+        if (window.confetti) {
+          confetti({ particleCount: 55, spread: 60, origin: { y: 0.7 } });
+        }
+        this.renderShopAndTechs();
+        this.updateAll();
+      }
+
+      /**
+       * Mise à jour en temps réel des compteurs, jauges et statistiques
+       */
+      updateMetricsAndFrenzy() {
+        document.getElementById('metricBB').textContent = `${formatNumber(this.model.bb, 1)} BB`;
+        document.getElementById('metricRawBBps').textContent = `+${formatNumber(this.model.computed.totalRawBBps, 1)} /s`;
+        document.getElementById('metricConsumedBBps').textContent = `-${formatNumber(this.model.computed.actualConsBBps, 1)} /s`;
+
+        const netBB = this.model.computed.netBBps;
+        const netEl = document.getElementById('metricNetBBps');
+        netEl.textContent = `${netBB >= 0 ? '+' : ''}${formatNumber(netBB, 1)} BB/s`;
+        netEl.className = netBB >= 0 ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold';
+
+        document.getElementById('metricDollars').textContent = `${formatNumber(this.model.dollars, 1)} $`;
+        document.getElementById('metricDollarsPs').textContent = `+${formatNumber(this.model.computed.totalDollarsPs, 1)} $/s`;
+
+        document.getElementById('metricClickPower').textContent = `+${formatNumber(this.model.getClickPower(), 1)} BB`;
+
+        // Indicateur d'approvisionnement des usines
+        const anyPaused = this.model.grid.some(c => c.building && BUILDINGS_CATALOG[c.building.id].category === 'factory' && c.building.activeStatus === 'paused');
+        const pill = document.getElementById('supplyStatusPill');
+        if (anyPaused) {
+          pill.textContent = 'Usine en attente de BB';
+          pill.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        } else {
+          pill.textContent = 'Flux optimal (100%)';
+          pill.className = 'text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        }
+
+        // Jauge Banana Frenzy
+        const headerBadge = document.getElementById('frenzyHeaderBadge');
+        const gridCard = document.getElementById('gridCard');
+        const bar = document.getElementById('frenzyProgressBar');
+        const pctText = document.getElementById('frenzyPercentText');
+
+        if (this.model.frenzyTimer > 0) {
+          headerBadge.classList.remove('hidden');
+          headerBadge.classList.add('flex');
+          document.getElementById('frenzyHeaderTimer').textContent = `${this.model.frenzyTimer.toFixed(1)}s`;
+          gridCard.classList.add('frenzy-active-glow');
+
+          const pctRemaining = (this.model.frenzyTimer / 20) * 100;
+          bar.style.width = `${pctRemaining}%`;
+          pctText.textContent = `ACTIF (${this.model.frenzyTimer.toFixed(1)}s)`;
+        } else {
+          headerBadge.classList.add('hidden');
+          headerBadge.classList.remove('flex');
+          gridCard.classList.remove('frenzy-active-glow');
+
+          bar.style.width = `${this.model.frenzyGauge}%`;
+          pctText.textContent = `${Math.round(this.model.frenzyGauge)} %`;
+        }
+
+        // Statistiques dans l'onglet Profil
+        document.getElementById('statTotalBB').textContent = `${formatNumber(this.model.stats.totalBB, 1)} BB`;
+        document.getElementById('statTotalDollars').textContent = `${formatNumber(this.model.stats.totalDollars, 1)} $`;
+        document.getElementById('statTotalClicks').textContent = this.model.stats.totalClicks.toString();
+        document.getElementById('statGoldenCaught').textContent = this.model.stats.goldenCaught.toString();
+        document.getElementById('statUnlockedCells').textContent = `${this.model.getUnlockedTilesCount()} / 36`;
+        document.getElementById('statAfkEfficiency').textContent = this.model.techs.night_logistics ? '100 % (Max)' : '50 %';
+      }
+
+      updateAll() {
+        this.updateMetricsAndFrenzy();
+        this.updateGridVisuals();
+        this.renderCellInspector();
+      }
+
+      /**
+       * Affichage de la popup récapitulative des gains hors-ligne (AFK)
+       */
+      showAfkModal(report) {
+        const mins = Math.floor(report.clampedSeconds / 60);
+        const secs = report.clampedSeconds % 60;
+        const hours = Math.floor(mins / 60);
+        const remMins = mins % 60;
+
+        let durationStr = `${mins}m ${secs}s`;
+        if (hours > 0) durationStr = `${hours}h ${remMins}m`;
+
+        document.getElementById('afkDurationText').textContent = durationStr;
+        document.getElementById('afkRateBadge').textContent = `${Math.round(report.afkEfficiency * 100)} %`;
+        document.getElementById('afkEarnedBB').textContent = `+${formatNumber(report.earnedBB, 1)} BB`;
+        document.getElementById('afkEarnedDollars').textContent = `+${formatNumber(report.earnedDollars, 1)} $`;
+
+        document.getElementById('afkModal').classList.remove('hidden');
+      }
+
+      /**
+       * Mise à jour de l'état de connexion Firebase / LocalStorage
+       */
+      updateAuthUI(state) {
+        const dot = document.getElementById('storageStatusDot');
+        const text = document.getElementById('storageStatusText');
+        const badge = document.getElementById('authUserBadge');
+        const formBox = document.getElementById('authFormContainer');
+        const loggedBox = document.getElementById('authLoggedContainer');
+        const emailDisplay = document.getElementById('authUserEmailDisplay');
+
+        if (state.isFirebaseConfigured && state.user) {
+          dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+          text.textContent = state.user.isAnonymous ? 'Cloud Firebase (Invité)' : 'Cloud Firebase Connecté';
+          badge.textContent = state.user.isAnonymous ? 'Invité Cloud' : 'Cloud Actif';
+          formBox.classList.add('hidden');
+          loggedBox.classList.remove('hidden');
+          emailDisplay.textContent = state.user.isAnonymous ? `ID Invité : ${state.user.uid.slice(0, 8)}...` : state.user.email;
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          text.textContent = 'Sauvegarde Locale Auto';
+          badge.textContent = state.isFirebaseConfigured ? 'Non connecté' : 'LocalStorage Auto';
+          formBox.classList.remove('hidden');
+          loggedBox.classList.add('hidden');
+        }
+      }
+
+      showToast(message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = 'px-4 py-2.5 rounded-xl bg-slate-900/95 border border-amber-400/50 text-white text-xs font-semibold shadow-xl backdrop-blur-md transition-all duration-300';
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          setTimeout(() => toast.remove(), 300);
+        }, 3200);
+      }
+    }
+
+    /**
+     * =========================================================================
+     * INITIALISATION AU CHARGEMENT DU DOM
+     * =========================================================================
+     */
+    window.addEventListener('DOMContentLoaded', async () => {
+      const model = new GameModel();
+      let ui = null;
+
+      const engine = new GameEngine(
+        model,
+        () => {
+          if (ui) {
+            ui.updateMetricsAndFrenzy();
+            ui.updateGridVisuals();
+          }
+        },
+        () => {
+          if (ui) ui.spawnGoldenBanana();
+        }
+      );
+
+      const saveManager = new AuthAndSaveManager(model, engine, (eventType, payload) => {
+        if (!ui) return;
+        if (eventType === 'toast') ui.showToast(payload);
+        if (eventType === 'afk') ui.showAfkModal(payload);
+        if (eventType === 'authState') ui.updateAuthUI(payload);
+        if (eventType === 'saved') {
+          document.getElementById('lastSaveTimeText').textContent = payload.toLocaleTimeString();
+        }
+      });
+
+      ui = new UIController(model, engine, saveManager);
+      ui.init();
+      await saveManager.init();
+      ui.renderShopAndTechs();
+      ui.updateAll();
+      engine.start();
+    });
+  </script>
+</body>
+</html>
